@@ -1,0 +1,44 @@
+http://localhost:8080/register for sig up user
+
+body post req 
+{
+  "name": "lucifero",
+  "email": "lucifero@gmail.com",
+  "password": "lucifero0033"
+}
+
+http://localhost:8080/addcontact for add contact user
+{
+  "user": "asta",
+  "contact": "lucifero"
+}
+
+
+http://localhost:8080/sendmessage for sendmessage from sender to receiver 
+{
+  "sender": "asta",
+  "receiver": "lucifero",
+  "message": "you"
+}
+
+http://localhost:8080/getmessages?user=asta&contact=lucifero get method for get data chat user
+
+asta value from user 
+lucifero value from contact 
+
+
+http://localhost:8080/login for login user 
+body 
+{
+    "name":"asta" ,
+    "password":"asta0033"
+    "email":"asta@gmail.com"
+}
+
+
+http://localhost:8080/logout?Authorization=Bearer      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoibHVjaWZlcm9AZ21haWwuY29tIiwiZXhwIjoxNzMxMDY3ODI5Nzk4LCJpYXQiOjE3MzA5ODE0Mjl9.kSQuNhMpqadfPdozGueL7IQCYCo5v3DwKlKrKRP2Xgo",
+
+
+for logout 
+headers 
+        key Authorization  value Bearer  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoibHVjaWZlcm9AZ21haWwuY29tIiwiZXhwIjoxNzMxMDY3ODI5Nzk4LCJpYXQiOjE3MzA5ODE0Mjl9.kSQuNhMpqadfPdozGueL7IQCYCo5v3DwKlKrKRP2Xgo",
