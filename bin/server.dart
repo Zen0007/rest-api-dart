@@ -13,9 +13,10 @@ Map<String, dynamic> database = {
   "user": {},
 };
 
-final db = Db('mongodb://localhost:27017/');
+final db = Db('mongodb://localhost:27017/chat');
+final colection = db.collection('main');
 
-var blacklistedTokens = <String>{};
+final blacklistedTokens = db.collection('blaclistoken');
 Map<String, dynamic> jwtActiv = {};
 
 // Configure routes.
@@ -42,6 +43,7 @@ String generateRandomString(int length) {
 }
 
 Future<Response> register(Request req) async {
+  await db.open();
   try {
     final request = await req.readAsString();
     final data = json.decode(request);
@@ -54,7 +56,9 @@ Future<Response> register(Request req) async {
 
     final userName = data["name"];
     final password = hashPassword(data['password']);
-    if (database['user'].containsKey(userName)) {
+
+    final chekUser = await colection.findOne(where.eq('userName', userName));
+    if (chekUser != null) {
       return Response(400, body: 'User already exists');
     }
 
@@ -62,23 +66,39 @@ Future<Response> register(Request req) async {
     print(data['email']);
     print(data['password']);
 
-    database['user'][userName] = {
-      'profile': {
-        'name': data['name'],
-        'email': data['email'],
-        'password': password,
-      },
-      'contact': {}
-    };
+    // database['user'][userName] = {
+    //   'profile': {
+    //     'name': data['name'],
+    //     'email': data['email'],
+    //     'password': password,
+    //   },
+    //   'contact': {}
+    // };
+    await colection.insertMany(
+      [
+        {
+          userName: {
+            "profile": {
+              'name': userName,
+              'email': data['email'],
+              'password': password,
+            },
+          }
+        },
+      ],
+    );
     print(database);
     return Response(201, body: "success to resgister");
   } catch (e) {
     print(e);
     return Response(500, body: "internla server error ");
+  } finally {
+    await db.close();
   }
 }
 
 Future<Response> login(Request req) async {
+  await db.open();
   try {
     final request = await req.readAsString();
     final data = json.decode(request);
@@ -91,15 +111,23 @@ Future<Response> login(Request req) async {
     final user = data['name'];
     final password = data['password'];
 
-    if (!database['user'].containsKey(user)) {
+    final document = await colection.findOne(
+      where.exists('main.$user.profile.password'),
+    );
+
+    //chek if data user is null
+    if (document == null) {
       return Response(401, body: "missing input user name");
     }
-
     final hashedPassword = hashPassword(password);
-    if (database['user'][user]['profile']['password'] != hashedPassword) {
+
+    //chek if passeword user is null
+    if (document['main'][user]['profile']['password'] != hashedPassword) {
       return Response(401, body: "invalid password");
     }
-    if (database['user'][user]['profile']['email'] != userEmail) {
+
+    //chek if email is null
+    if (document['main'][user]['profile']['email'] != userEmail) {
       return Response(401, body: "invalid email");
     }
     // Create JWT token
@@ -119,15 +147,6 @@ Future<Response> login(Request req) async {
 
     jwtActiv[user] = token;
     print(token);
-    print(
-      {
-        "token": token,
-        "user": {
-          "name": user,
-          "email": database['user'][user]['profile']['email'],
-        },
-      },
-    );
 
     return Response(
       201,
@@ -136,7 +155,7 @@ Future<Response> login(Request req) async {
           "token": token,
           "user": {
             "name": user,
-            "email": database['user'][user]['profile']['email'],
+            "email": document['main'][user]['profile']['email'],
           },
         },
       ),
@@ -144,14 +163,22 @@ Future<Response> login(Request req) async {
     );
   } catch (e) {
     return Response(500, body: "internal server error");
+  } finally {
+    await db.close();
   }
 }
 
 Future<Response> logout(Request req) async {
+  await db.open();
   try {
     final token = req.headers['Authorization']?.split('Bearer ').last;
+
     if (token != null) {
-      blacklistedTokens.add(token);
+      blacklistedTokens.insert(
+        {
+          "token": token,
+        },
+      );
       return Response.ok(json.encode({'message': 'Logout successful'}),
           headers: {'content-type': 'application/json'});
     }
@@ -159,10 +186,13 @@ Future<Response> logout(Request req) async {
   } catch (e) {
     print(e);
     return Response(500, body: "invlaid server error $e");
+  } finally {
+    await db.close();
   }
 }
 
 Future<Response> addContact(Request req) async {
+  await db.open();
   try {
     final request = await req.readAsString();
 
@@ -181,28 +211,50 @@ Future<Response> addContact(Request req) async {
     final user = data['user'];
     final contact = data["contact"];
 
-    if (!database['user'].containsKey(user)) {
+    final document = await colection.findOne(
+      where.exists('main.$user.contact.$contact'),
+    );
+
+    if (document != null) {
+      return Response(400, body: 'Contact already exists ');
+    }
+
+    if (document == null) {
       return Response(400, body: 'not had exist user or contact ');
     }
 
-    if (database['user'][user]['contact'].containsKey(contact)) {
-      return Response(400, body: 'Contact already exists');
-    }
+    // database['user'][user]['contact'][contact] = {
+    //   "chat": [],
+    // };
 
-    database['user'][user]['contact'][contact] = {
+    final chat = {
       "chat": [],
     };
 
-    print(database);
-    return Response(201, body: "success");
+    final results = await colection.updateOne(
+      where.eq('main', user),
+      modify.set(
+        'contact.$contact',
+        chat,
+      ),
+    );
+
+    if (results.isSuccess) {
+      return Response(201, body: "success");
+    } else {
+      return Response(400, body: "invalid add contact");
+    }
   } catch (e, s) {
     print("$e  ===============");
     print(s);
     return Response(500, body: "internal server error ");
+  } finally {
+    await db.close();
   }
 }
 
 Future<Response> sendMassage(Request req) async {
+  await db.open();
   final request = await req.readAsString();
   final data = json.decode(request);
 
@@ -225,56 +277,26 @@ Future<Response> sendMassage(Request req) async {
     // Log the entire database structure for debugging
     print('Database: $database');
 
+    final isEmpty = await colection.count();
     // Check if the database is null or empty
-    if (database.isEmpty) {
+    if (isEmpty == 0) {
       return Response(500, body: 'Database is null or empty');
     }
 
-    // Check if the 'user' key exists in the database
-    if (!database.containsKey('user')) {
-      return Response(500, body: 'User  data is missing in database');
-    }
-
+    final isSender = await colection.findOne(
+      where.exists('main.$sender'),
+    );
     // Check if the sender exists in the database
-    if (!database['user'].containsKey(sender)) {
+    if (isSender == null) {
       return Response(400, body: 'Invalid sender');
     }
 
+    final isReceiver = await colection.findOne(
+      where.exists('main.$receiver'),
+    );
     // Check if the receiver exists in the database
-    if (!database['user'].containsKey(receiver)) {
+    if (isReceiver == null) {
       return Response(400, body: 'Invalid receiver');
-    }
-
-    // Ensure the sender's contact list exists
-    if (!database['user'][sender].containsKey('contact')) {
-      database['user'][sender]['contact'] = {};
-    }
-
-    // Ensure the receiver is in the sender's contact list
-    if (!database['user'][sender]['contact'].containsKey(receiver)) {
-      database['user'][sender]['contact']
-          [receiver] = {'chat': []}; // Initialize if not exists
-    }
-
-    // Ensure the sender's chat list for the receiver exists
-    if (database['user'][sender]['contact'][receiver]['chat'] == null) {
-      database['user'][sender]['contact'][receiver]['chat'] = [];
-    }
-
-    // Ensure the receiver's contact list exists
-    if (!database['user'][receiver].containsKey('contact')) {
-      database['user'][receiver]['contact'] = {};
-    }
-
-    // Ensure the sender is in the receiver's contact list
-    if (!database['user'][receiver]['contact'].containsKey(sender)) {
-      database['user'][receiver]['contact']
-          [sender] = {'chat': []}; // Initialize if not exists
-    }
-
-    // Ensure the receiver's chat list for the sender exists
-    if (database['user'][receiver]['contact'][sender]['chat'] == null) {
-      database['user'][receiver]['contact'][sender]['chat'] = [];
     }
 
     // Create the message object
@@ -283,38 +305,55 @@ Future<Response> sendMassage(Request req) async {
       "time": time,
     };
 
-    // Add the message to both sender's and receiver's chat
-    database['user'][sender]['contact'][receiver]["chat"].add(messageObject);
-    database['user'][receiver]['contact'][sender]["chat"].add(messageObject);
+    final updateSender = await colection.updateOne(where.eq("main", sender),
+        modify.push("main.$sender.contact.$receiver.chat", messageObject));
 
-    print(database);
+    final updateReceiver = await colection.updateOne(
+      where.eq("main", receiver),
+      modify.push("main.$receiver.contact.$sender.chat", messageObject),
+    );
 
-    return Response(201, body: "Success send message");
+    if (updateSender.isSuccess && updateReceiver.isSuccess) {
+      return Response(201, body: "Success send message");
+    } else {
+      return Response(400, body: "invalid send message");
+    }
+    // // Add the message to both sender's and receiver's chat
+    // database['user'][sender]['contact'][receiver]["chat"].add(messageObject);
+    // database['user'][receiver]['contact'][sender]["chat"].add(messageObject);
+    // print(database);
   } catch (e, s) {
     print("Error: $e"); // Log the error for debugging
     print("Stack trace: $s");
     return Response(500,
         body:
             "Internal server error: $e   ==${data['receiver']}  ${data['sender']}");
+  } finally {
+    await db.close();
   }
 }
 
 Future<Response> getMassage(Request req) async {
+  await db.open();
   try {
-    final user = req.url.queryParameters["user"];
+    final user = req.url.queryParameters["main"];
     final contact = req.url.queryParameters['contact'];
 
     if (user == null || contact == null) {
       return Response(400, body: "invalid user or contact");
     }
 
-    if (!database['user'].containsKey(user) ||
-        !database['user'].containsKey(contact) ||
-        !database['user'][user]['contact'].containsKey(contact)) {
+    final chekDataUser = await colection.findOne(where.eq("main", user));
+
+    if (chekDataUser == null) {
       return Response(400, body: 'Invalid user or contact');
     }
 
-    final massage = database['user'][user]['contact'][contact]['chat'];
+    if (!chekDataUser['contact'].containsKey(contact)) {
+      return Response(400, body: "not exist contact");
+    }
+
+    final massage = chekDataUser['main'][user]['contact'][contact]['chat'];
 
     return Response(
       200,
@@ -323,6 +362,8 @@ Future<Response> getMassage(Request req) async {
     );
   } catch (e) {
     return Response(500, body: "internal server error");
+  } finally {
+    await db.close();
   }
 }
 
