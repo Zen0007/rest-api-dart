@@ -17,7 +17,7 @@ final db = Db('mongodb://localhost:27017/chat');
 final colection = db.collection('main');
 
 final blacklistedTokens = db.collection('blaclistoken');
-Map<String, dynamic> jwtActiv = {};
+final jwtActiv = db.collection("activeJwtToken");
 
 // Configure routes.
 final router = Router()
@@ -55,10 +55,11 @@ Future<Response> register(Request req) async {
     }
 
     final userName = data["name"];
-    final password = hashPassword(data['password']);
+    final password = data['password'];
 
-    final chekUser = await colection.findOne(where.eq('userName', userName));
+    final chekUser = await colection.findOne(where.exists(userName));
     if (chekUser != null) {
+      await db.close();
       return Response(400, body: 'User already exists');
     }
 
@@ -74,6 +75,7 @@ Future<Response> register(Request req) async {
     //   },
     //   'contact': {}
     // };
+
     await colection.insertMany(
       [
         {
@@ -112,24 +114,31 @@ Future<Response> login(Request req) async {
     final password = data['password'];
 
     final document = await colection.findOne(
-      where.exists('main.$user.profile.password'),
+      where.exists(user),
     );
 
     //chek if data user is null
     if (document == null) {
-      return Response(401, body: "missing input user name");
+      await db.close();
+      return Response(401, body: "not exist user");
     }
-    final hashedPassword = hashPassword(password);
 
+    final findEmail =
+        await colection.findOne(where.eq("$user.profile.email", userEmail));
+    //chek if email is null
+    if (findEmail == null) {
+      await db.close();
+      return Response(401, body: "invalid email");
+    }
+
+    final findPassword =
+        await colection.findOne(where.eq("$user.profile.password", password));
     //chek if passeword user is null
-    if (document['main'][user]['profile']['password'] != hashedPassword) {
+    if (findPassword == null) {
+      await db.close();
       return Response(401, body: "invalid password");
     }
 
-    //chek if email is null
-    if (document['main'][user]['profile']['email'] != userEmail) {
-      return Response(401, body: "invalid email");
-    }
     // Create JWT token
     final JWT jwt = JWT(
       {
@@ -145,22 +154,33 @@ Future<Response> login(Request req) async {
       SecretKey(secretKey),
     );
 
-    jwtActiv[user] = token;
-    print(token);
-
-    return Response(
-      201,
-      body: json.encode(
-        {
-          "token": token,
-          "user": {
-            "name": user,
-            "email": document['main'][user]['profile']['email'],
-          },
-        },
-      ),
-      headers: {'content-type': 'application/json'},
+    final results = await jwtActiv.insertOne(
+      {
+        user: {"token": token},
+      },
     );
+
+    final email =
+        await colection.findOne(where.eq("$user.profile.email", userEmail));
+    print(token);
+    if (results.isSuccess) {
+      return Response(
+        201,
+        body: json.encode(
+          {
+            "token": token,
+            "user": {
+              "name": user,
+              "email": email![user]['profile']['email'],
+            },
+          },
+        ),
+        headers: {'content-type': 'application/json'},
+      );
+    } else {
+      await db.close();
+      return Response(400, body: "faild to login");
+    }
   } catch (e) {
     return Response(500, body: "internal server error");
   } finally {
@@ -211,42 +231,41 @@ Future<Response> addContact(Request req) async {
     final user = data['user'];
     final contact = data["contact"];
 
-    final document = await colection.findOne(
-      where.exists('main.$user.contact.$contact'),
-    );
+    final document =
+        await colection.findOne(where.eq('$user.contact.$contact', contact));
 
     if (document != null) {
       return Response(400, body: 'Contact already exists ');
     }
 
-    if (document == null) {
-      return Response(400, body: 'not had exist user or contact ');
+    final findContact = await colection.findOne(where.exists(contact));
+    if (findContact == null) {
+      return Response(400, body: "contact not exist in database");
     }
 
     // database['user'][user]['contact'][contact] = {
     //   "chat": [],
     // };
+    final id = await colection.findOne(where.eq("$user.profile.name", user));
+    final idUser = id!["_id"];
 
-    final chat = {
-      "chat": [],
-    };
-
-    final results = await colection.updateOne(
-      where.eq('main', user),
-      modify.set(
-        'contact.$contact',
-        chat,
-      ),
+    await colection.update(
+      where.eq('_id', idUser),
+      {
+        '\$set': {
+          "$user.contact": {
+            contact: {
+              "chat": [],
+            }
+          },
+        }
+      },
     );
 
-    if (results.isSuccess) {
-      return Response(201, body: "success");
-    } else {
-      return Response(400, body: "invalid add contact");
-    }
+    return Response(200, body: "success to add contact");
   } catch (e, s) {
     print("$e  ===============");
-    print(s);
+    print("$s   ------------------");
     return Response(500, body: "internal server error ");
   } finally {
     await db.close();
@@ -269,7 +288,9 @@ Future<Response> sendMassage(Request req) async {
     final sender = data['sender'];
     final receiver = data['receiver'];
     final message = data['message'];
-    final time = DateTime.now().toString();
+    final time = DateTime.now();
+    final date =
+        '${"${time.year}".padLeft(4, '0')}-${"${time.month}".padLeft(2, '0')}-${"${time.day}".padLeft(2, '0')} ${"${time.hour}".padLeft(2, '0')}:${"${time.minute}".padLeft(2, '0')}';
 
     print('Sender: $sender');
     print('Receiver: $receiver');
@@ -277,14 +298,8 @@ Future<Response> sendMassage(Request req) async {
     // Log the entire database structure for debugging
     print('Database: $database');
 
-    final isEmpty = await colection.count();
-    // Check if the database is null or empty
-    if (isEmpty == 0) {
-      return Response(500, body: 'Database is null or empty');
-    }
-
     final isSender = await colection.findOne(
-      where.exists('main.$sender'),
+      where.exists('$sender'),
     );
     // Check if the sender exists in the database
     if (isSender == null) {
@@ -292,25 +307,43 @@ Future<Response> sendMassage(Request req) async {
     }
 
     final isReceiver = await colection.findOne(
-      where.exists('main.$receiver'),
+      where.exists('$receiver'),
     );
     // Check if the receiver exists in the database
     if (isReceiver == null) {
       return Response(400, body: 'Invalid receiver');
     }
 
-    // Create the message object
-    final messageObject = {
-      "text": message,
-      "time": time,
-    };
+    final id =
+        await colection.findOne(where.eq("$sender.profile.name", sender));
+    final idSender = id!["_id"];
 
-    final updateSender = await colection.updateOne(where.eq("main", sender),
-        modify.push("main.$sender.contact.$receiver.chat", messageObject));
+    // update sender
+    final updateSender = await colection.updateOne(
+      where.eq('_id', idSender),
+      modify.push(
+        "$sender.contact.$receiver.chat",
+        {
+          "text": message,
+          "time": date,
+        },
+      ),
+    );
 
+    final idtwo =
+        await colection.findOne(where.eq("$receiver.profile.name", receiver));
+    final idReceiver = idtwo!["_id"];
+
+    // update receiver
     final updateReceiver = await colection.updateOne(
-      where.eq("main", receiver),
-      modify.push("main.$receiver.contact.$sender.chat", messageObject),
+      where.eq("_id", idReceiver),
+      modify.push(
+        "$receiver.contact.$sender.chat",
+        {
+          "text": message,
+          "time": date,
+        },
+      ),
     );
 
     if (updateSender.isSuccess && updateReceiver.isSuccess) {
@@ -336,24 +369,28 @@ Future<Response> sendMassage(Request req) async {
 Future<Response> getMassage(Request req) async {
   await db.open();
   try {
-    final user = req.url.queryParameters["main"];
+    final user = req.url.queryParameters['main'];
     final contact = req.url.queryParameters['contact'];
 
     if (user == null || contact == null) {
-      return Response(400, body: "invalid user or contact");
+      return Response.badRequest(
+          body: json.encode({
+            'error': 'Invalid parameters',
+            'message': 'Both user and contact are required'
+          }),
+          headers: {'content-type': 'application/json'});
+    }
+    final id = await colection.findOne(where.exists(user));
+
+    if (id == null) {
+      return Response(400, body: "not exist contact $id $user $contact");
     }
 
-    final chekDataUser = await colection.findOne(where.eq("main", user));
-
-    if (chekDataUser == null) {
-      return Response(400, body: 'Invalid user or contact');
+    if (id[user]['contact'][contact] == null) {
+      return Response(404, body: "not have contact exits");
     }
 
-    if (!chekDataUser['contact'].containsKey(contact)) {
-      return Response(400, body: "not exist contact");
-    }
-
-    final massage = chekDataUser['main'][user]['contact'][contact]['chat'];
+    final massage = id[user]['contact'][contact];
 
     return Response(
       200,
@@ -369,6 +406,7 @@ Future<Response> getMassage(Request req) async {
 
 void main(List<String> args) async {
   // Use any available host or container IP (usually `0.0.0.0`).
+
   final ip = InternetAddress.anyIPv4;
 
   // Configure a pipeline that logs requests.
