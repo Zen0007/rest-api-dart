@@ -1,0 +1,22 @@
+services:
+  dart_server:
+    build: .
+    container_name: dart_server
+    ports:
+      - "8080:8080" # Ubah port host ke 8081
+    depends_on:
+      - dart_server-db
+    environment:
+      - MONGO_URL:mongodb://localhost:27017/chat
+      - PORT:8080
+
+  dart_server-db:
+    image: mongo:4.4
+    container_name: dart_server-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:

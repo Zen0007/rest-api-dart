@@ -13,7 +13,10 @@ Map<String, dynamic> database = {
   "user": {},
 };
 
-final db = Db('mongodb://localhost:27017/chat');
+final urlDb =
+    Platform.environment['MONGO_URL'] ?? 'mongodb://localhost:27017/chat';
+
+final db = Db(urlDb);
 final colection = db.collection('main');
 
 final blacklistedTokens = db.collection('blaclistoken');
@@ -405,8 +408,6 @@ Future<Response> getMassage(Request req) async {
 }
 
 void main(List<String> args) async {
-  // Use any available host or container IP (usually `0.0.0.0`).
-
   final ip = InternetAddress.anyIPv4;
 
   // Configure a pipeline that logs requests.
