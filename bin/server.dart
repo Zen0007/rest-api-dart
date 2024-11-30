@@ -9,27 +9,13 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
-Map<String, dynamic> database = {
-  "user": {},
-};
-
-final urlDb =
+final url =
     Platform.environment['MONGO_URL'] ?? 'mongodb://localhost:27017/chat';
-
-final db = Db(urlDb);
+final db = Db(url);
 final colection = db.collection('main');
 
 final blacklistedTokens = db.collection('blaclistoken');
 final jwtActiv = db.collection("activeJwtToken");
-
-// Configure routes.
-final router = Router()
-  ..post("/register", register)
-  ..post("/login", login)
-  ..post("/logout", logout)
-  ..post("/addcontact", addContact)
-  ..post("/sendmessage", sendMassage)
-  ..get("/getmessages", getMassage);
 
 String hashPassword(String password) {
   final bytes = utf8.encode(password);
@@ -92,7 +78,6 @@ Future<Response> register(Request req) async {
         },
       ],
     );
-    print(database);
     return Response(201, body: "success to resgister");
   } catch (e) {
     print(e);
@@ -228,9 +213,6 @@ Future<Response> addContact(Request req) async {
     }
     print(data);
 
-    print(database['user']);
-    print(database['contact']);
-
     final user = data['user'];
     final contact = data["contact"];
 
@@ -299,7 +281,6 @@ Future<Response> sendMassage(Request req) async {
     print('Receiver: $receiver');
 
     // Log the entire database structure for debugging
-    print('Database: $database');
 
     final isSender = await colection.findOne(
       where.exists('$sender'),
@@ -410,12 +391,20 @@ Future<Response> getMassage(Request req) async {
 void main(List<String> args) async {
   final ip = InternetAddress.anyIPv4;
 
+// Configure routes.
+  final router = Router()
+    ..post("/register", register)
+    ..post("/login", login)
+    ..post("/logout", logout)
+    ..post("/addcontact", addContact)
+    ..post("/sendmessage", sendMassage)
+    ..get("/getmessages", getMassage);
+
   // Configure a pipeline that logs requests.
+  print(url);
   try {
     final handler =
         Pipeline().addMiddleware(logRequests()).addHandler(router.call);
-
-    print(database);
 
     // For running in containers, we respect the PORT environment variable.
     final port = int.parse(Platform.environment['PORT'] ?? '8080');
