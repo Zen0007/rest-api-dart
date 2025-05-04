@@ -1,0 +1,17 @@
+{
+    "asta": {
+        "password": "asta123",
+        "contact": [
+            {
+                "is_me": "asta",
+                "name": "asta",
+                "chat": []
+            },
+            {
+                "is_me": "asta",
+                "name": "luck",
+                "chat": []
+            }
+        ]
+    }
+}
