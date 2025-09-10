@@ -9,6 +9,7 @@ import 'server.dart';
 
 Future<Response> login(Request req) async {
   await db.open();
+  
   try {
     final request = await req.readAsString();
     final data = json.decode(request);

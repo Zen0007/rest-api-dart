@@ -26,7 +26,7 @@ Future<Response> register(Request req) async {
     // required minimum length name
     if (userName.length < 8 || password.length < 8) {
       return Response(HttpStatus.badRequest,
-          body: "name or passowrt too short");
+          body: "name or passowrd too short");
     }
 
     final chekUser = await colection.findOne(where.exists(userName));
